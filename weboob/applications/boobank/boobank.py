@@ -513,6 +513,91 @@ class Boobank(ReplApplication):
         for investment in self.do('iter_investment', account, backends=account.backend):
             self.format(investment)
 
+    def do_nynab(self,line):
+        """
+        nynab
+
+        export your bank accounts and transactions to nYNAB
+
+        https://www.youneedabudget.com
+        """
+        try:
+            from pynYNAB.Client import nYnabClient
+            from pynYNAB.connection import nYnabConnection
+            from pynYNAB.budget import Account as nYNABAccount,Transaction as nYNABTransaction
+            from pynYNAB.config import test_common_args
+            from pynYNAB import KeyGenerator
+            from pynYNAB.Entity import undef, AccountTypes
+            import configargparse
+            from weboob.core.backendscfg import BackendsConfig
+
+            result=self.load_backends(None,'nynab')
+
+            parser = configargparse.getArgumentParser('pynYNAB')
+
+            email=result['nynab'].config['login'].get()
+            password=result['nynab'].config['password'].get()
+            budgetname=result['nynab'].config['budgetname'].get()
+
+            connection = nYnabConnection(email, password)
+            client=nYnabClient(connection,budgetname)
+
+            accounts = {}
+            for account in client.budget.be_accounts:
+                if account.note is not None and account.note != undef:
+                    accounts[account.note] = account
+
+            for account in self.do('iter_accounts'):
+                if account.id not in accounts:
+                    TypeMapping=[
+                        AccountTypes.OtherLiability,   #TYPE_UNKNOWN
+                        AccountTypes.Checking,  #TYPE_CHECKING
+                        AccountTypes.Savings, #TYPE_SAVINGS
+                        AccountTypes.OtherAsset, #TYPE_DEPOSIT
+                        AccountTypes.Mortgage, #TYPE_LOAN
+                        AccountTypes.InvestmentAccount, #TYPE_MARKET
+                        AccountTypes.Checking, #TYPE_JOINT
+                        AccountTypes.CreditCard, #TYPE_CARD
+                        AccountTypes.OtherAsset #TYPE_LIFE_INSURANCE
+                    ]
+
+                    result=client.select_account_ui(create=True)
+                    if result is None:
+                        newaccount=nYNABAccount(
+                            account_type=TypeMapping[account.type],
+                            account_name=account.label +' ' + account.backend,
+                            #direct_connect_account_id=account.id,
+                            note=account.id
+                        )
+                        client.add_account(newaccount,balance=account.balance,balance_date=datetime.datetime.now().date())
+                        nynabaccount = newaccount
+                    else:
+                        nynabaccount = result
+                else:
+                    nynabaccount = accounts[account.id]
+
+                transactions = []
+                for tr in self.do('iter_history', account, backends=account.backend):
+                    transactions.append({'original_wording': tr.raw,
+                                         'simplified_wording': tr.label,
+                                         'value': tr.amount,
+                                         'date': tr.date.strftime('%Y-%m-%d'),
+                                         })
+                    # uses the transaction id (should be unique between transactions?) to handle duplicates
+                    ynab_id=KeyGenerator.deterministicuuid(tr.id)
+                    if client.budget.be_transactions.get(ynab_id) is None:
+                        newTransaction=nYNABTransaction(
+                            id=ynab_id,
+                            amount=tr.amount,
+                            entities_account_id=nynabaccount.id,
+                            date=tr.date,
+                            memo=tr.category + ' '+ tr.label,
+                        )
+                        client.add_transaction(newTransaction)
+
+        except ImportError:
+            self.logger.error('This requires the pynYNAB package installed')
+
     def do_budgea(self, line):
         """
         budgea USERNAME PASSWORD
