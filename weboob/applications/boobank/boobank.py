@@ -28,7 +28,7 @@ from decimal import Decimal, InvalidOperation
 from weboob.browser.browsers import APIBrowser
 from weboob.browser.profiles import Weboob
 from weboob.exceptions import BrowserHTTPError
-from weboob.capabilities.base import empty
+from weboob.capabilities.base import empty, NotAvailable
 from weboob.capabilities.bank import CapBank, Account, Transaction
 from weboob.tools.application.repl import ReplApplication, defaultcount
 from weboob.tools.application.formatters.iformatter import IFormatter, PrettyFormatter
@@ -531,9 +531,19 @@ class Boobank(ReplApplication):
             import configargparse
             from weboob.core.backendscfg import BackendsConfig
 
-            result=self.load_backends(None,'nynab')
+            TypeMapping=[
+                        AccountTypes.OtherLiability,   #TYPE_UNKNOWN
+                        AccountTypes.Checking,  #TYPE_CHECKING
+                        AccountTypes.Savings, #TYPE_SAVINGS
+                        AccountTypes.OtherAsset, #TYPE_DEPOSIT
+                        AccountTypes.Mortgage, #TYPE_LOAN
+                        AccountTypes.InvestmentAccount, #TYPE_MARKET
+                        AccountTypes.Checking, #TYPE_JOINT
+                        AccountTypes.CreditCard, #TYPE_CARD
+                        AccountTypes.OtherAsset #TYPE_LIFE_INSURANCE
+                    ]
 
-            parser = configargparse.getArgumentParser('pynYNAB')
+            result=self.load_backends(None,'nynab')
 
             email=result['nynab'].config['login'].get()
             password=result['nynab'].config['password'].get()
@@ -546,57 +556,64 @@ class Boobank(ReplApplication):
             for account in client.budget.be_accounts:
                 if account.note is not None and account.note != undef:
                     accounts[account.note] = account
-
+            transactions={}
             for account in self.do('iter_accounts'):
+                transactions[account.id]=[tr for tr in self.do('iter_history', account, backends=account.backend)]
                 if account.id not in accounts:
-                    TypeMapping=[
-                        AccountTypes.OtherLiability,   #TYPE_UNKNOWN
-                        AccountTypes.Checking,  #TYPE_CHECKING
-                        AccountTypes.Savings, #TYPE_SAVINGS
-                        AccountTypes.OtherAsset, #TYPE_DEPOSIT
-                        AccountTypes.Mortgage, #TYPE_LOAN
-                        AccountTypes.InvestmentAccount, #TYPE_MARKET
-                        AccountTypes.Checking, #TYPE_JOINT
-                        AccountTypes.CreditCard, #TYPE_CARD
-                        AccountTypes.OtherAsset #TYPE_LIFE_INSURANCE
-                    ]
-
-                    result=client.select_account_ui(create=True)
-                    if result is None:
-                        newaccount=nYNABAccount(
-                            account_type=TypeMapping[account.type],
-                            account_name=account.label +' ' + account.backend,
-                            #direct_connect_account_id=account.id,
-                            note=account.id
-                        )
-                        client.add_account(newaccount,balance=account.balance,balance_date=datetime.datetime.now().date())
-                        nynabaccount = newaccount
+                    self.logger.info('Can''t find a nYNAB account previously linked to that account:')
+                    self.logger.info(account.id + '@' + account.backend)
+                    self.logger.info(account.label)
+                    self.logger.info('Will create a new one')
+                    # balance now = balance start + sum amounts
+                    if len(transactions[account.id]) >= 1:
+                        firsttransactiondate=min(tr.date for tr in transactions[account.id])
+                        sumamounts=sum(tr.amount for tr in transactions[account.id])
+                        balance=account.balance-sumamounts
+                        balance_date=firsttransactiondate-datetime.timedelta(days=1)
                     else:
-                        nynabaccount = result
-                else:
-                    nynabaccount = accounts[account.id]
+                        balance=account.balance
+                        balance_date=datetime.datetime.now()-datetime.timedelta(days=1)
 
-                transactions = []
-                for tr in self.do('iter_history', account, backends=account.backend):
-                    transactions.append({'original_wording': tr.raw,
-                                         'simplified_wording': tr.label,
-                                         'value': tr.amount,
-                                         'date': tr.date.strftime('%Y-%m-%d'),
-                                         })
+
+                    newaccount=nYNABAccount(
+                        account_type=TypeMapping[account.type],
+                        account_name=account.label +' ' + account.backend,
+                        #direct_connect_account_id=account.id,
+                        note=account.id
+                    )
+                    client.add_account(newaccount,balance=balance,balance_date=balance_date)
+                    accounts[account.id] = newaccount
+
+            transactions_to_add=[]
+            for account in self.do('iter_accounts'):
+                nynabaccount = accounts[account.id]
+
+                for tr in transactions[account.id]:
                     # uses the transaction id (should be unique between transactions?) to handle duplicates
                     ynab_id=KeyGenerator.deterministicuuid(tr.id)
-                    if client.budget.be_transactions.get(ynab_id) is None:
+                    if not any(True for t in client.budget.be_transactions if t.ynab_id==ynab_id):
+                        if tr.category == NotAvailable:
+                            memo=tr.label
+                        else:
+                            memo=tr.category+' '+tr.label
+
                         newTransaction=nYNABTransaction(
-                            id=ynab_id,
                             amount=tr.amount,
                             entities_account_id=nynabaccount.id,
                             date=tr.date,
-                            memo=tr.category + ' '+ tr.label,
+                            memo=memo,
+                            ynab_id=ynab_id
                         )
-                        client.add_transaction(newTransaction)
+                        transactions_to_add.append(newTransaction)
+                    else:
+                        self.logger.info('ignoring a duplicate transaction %s' % tr.raw)
+            client.add_transactions(transactions_to_add)
+
+            self.logger.info('OK, finished import the transactions to nYNAB.')
 
         except ImportError:
-            self.logger.error('This requires the pynYNAB package installed')
+            self.logger.error('This command requires the pynynab package installed')
+            self.logger.Error('run ''pip install pynynab'' or go to https://github.com/rienafairefr/nYNABapi to fix')
 
     def do_budgea(self, line):
         """
