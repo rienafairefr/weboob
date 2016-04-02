@@ -474,6 +474,12 @@ class CardsPage(BasePage):
         params = self.get_params()
 
         account = None
+        currency = None
+        for th in self.document.xpath('//table[@id="TabCtes"]//thead//th'):
+            m = re.match('.*\((\w+)\)$', th.text)
+            if m and currency is None:
+                currency = Account.get_currency(m.group(1))
+
         for tr in self.document.xpath('//table[@id="TabCtes"]/tbody/tr'):
             cols = tr.xpath('./td')
 
@@ -489,6 +495,7 @@ class CardsPage(BasePage):
                 account._prev_debit = datetime.date(2000,1,1)
                 account.label = u' '.join([self.parser.tocleanstring(cols[self.COL_TYPE]),
                                            self.parser.tocleanstring(cols[self.COL_LABEL])])
+                account.currency = currency
                 account._params = None
                 account._invest_params = None
                 account._coming_params = params.copy()
@@ -642,6 +649,11 @@ class TransactionsPage(BasePage):
                 t.amount = -account._prev_balance
                 yield t
 
+        currency = Account.get_currency(self.document\
+                                        .xpath('//table[@id="TabFact"]/thead//th')[self.COL_CARD_AMOUNT]\
+                                        .text\
+                                        .replace('(', ' ')\
+                                        .replace(')', ' '))
         for i, tr in enumerate(self.document.xpath('//table[@id="TabFact"]/tbody/tr')):
             tds = tr.findall('td')
 
@@ -657,6 +669,7 @@ class TransactionsPage(BasePage):
             t.parse(debit_date, re.sub(r'[ ]+', ' ', label))
             t.set_amount(amount)
             t.rdate = t.parse_date(date)
+            t.original_currency = currency
             yield t
 
     def no_operations(self):

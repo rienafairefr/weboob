@@ -25,7 +25,7 @@ from weboob.deprecated.browser import Page
 
 class ArtistResultsPage(Page):
     def iter_lyrics(self):
-        for link in self.parser.select(self.document.getroot(), 'div#albums > h1 a'):
+        for link in self.parser.select(self.document.getroot(), 'div.elenco div li a'):
             artist = unicode(link.text_content())
             href = link.attrib.get('href', '')
             if href.startswith('/paroles'):
@@ -39,22 +39,24 @@ class ArtistSongsPage(Page):
     def iter_lyrics(self, artist=None):
         if artist is None:
             artist = self.parser.select(self.document.getroot(), 'head > title', 1).text.replace('Paroles ', '')
-        for link in self.parser.select(self.document.getroot(), 'div#albums a'):
+        for link in self.parser.select(self.document.getroot(), 'div.album ul li a'):
             href = link.attrib.get('href', '')
             titleattrib = link.attrib.get('title', '')
             if href.startswith('/paroles') and not href.endswith('alpha.html') and titleattrib.startswith('Paroles '):
                 title = unicode(link.text)
                 ids = href.replace('/', '').replace('.html', '').split('paroles_')
                 id = '%s|%s' % (ids[1], ids[2])
-                songlyrics = SongLyrics(id, title)
+                songlyrics = SongLyrics(id)
                 songlyrics.artist = artist
+                songlyrics.title = title
+                songlyrics.id = id
                 songlyrics.content = NotLoaded
                 yield songlyrics
 
 
 class SongResultsPage(Page):
     def iter_lyrics(self):
-        for link in self.parser.select(self.document.getroot(), 'div#albums a'):
+        for link in self.parser.select(self.document.getroot(), 'div.elenco div.col-left li a'):
             artist = NotAvailable
             title = unicode(link.text.split(' - ')[0])
             href = link.attrib.get('href', '')
@@ -65,6 +67,8 @@ class SongResultsPage(Page):
                 songlyrics = SongLyrics(id, title)
                 songlyrics.artist = artist
                 songlyrics.content = NotLoaded
+                songlyrics.title = title
+                songlyrics.id = id
                 yield songlyrics
 
 
@@ -73,7 +77,7 @@ class SonglyricsPage(Page):
         content = NotAvailable
         artist = NotAvailable
         title = NotAvailable
-        lyrdiv = self.parser.select(self.document.getroot(), 'div#songlyrics_h')
+        lyrdiv = self.parser.select(self.document.getroot(), 'div.lyrics-body')
         if len(lyrdiv) > 0:
             content = unicode(lyrdiv[0].text_content().strip())
         infos = self.parser.select(self.document.getroot(), 'head > title', 1).text

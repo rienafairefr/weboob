@@ -29,7 +29,7 @@ from weboob.tools.date import LinearDateGuesser
 from .pages import HomePage, LoginPage, LoginErrorPage, AccountsPage, \
                    SavingsPage, TransactionsPage, UselessPage, CardsPage, \
                    LifeInsurancePage, MarketPage, LoansPage, PerimeterPage, \
-                   ChgPerimeterPage
+                   ChgPerimeterPage, MarketHomePage
 
 
 __all__ = ['Cragr']
@@ -56,6 +56,7 @@ class Cragr(Browser):
              'https?://[^/]+/stb/collecteNI\?.*fwkaction=Cartes.*':      CardsPage,
              'https?://[^/]+/stb/collecteNI\?.*fwkaction=Detail.*sessionAPP=Cartes.*': CardsPage,
              'https?://www.cabourse.credit-agricole.fr/netfinca-titres/servlet/com.netfinca.frontcr.account.WalletVal\?nump=.*': MarketPage,
+             'https?://www.cabourse.credit-agricole.fr/netfinca-titres/servlet/com.netfinca.frontcr.synthesis.HomeSynthesis': MarketHomePage,
              'https://assurance-personnes.credit-agricole.fr:443/filiale/entreeBam\?identifiantBAM=.*': LifeInsurancePage,
 
              'https?://[^/]+/stb/entreeBam\?.*act=Perimetre':        PerimeterPage,
@@ -145,7 +146,7 @@ class Cragr(Browser):
         if not url.startswith('http'):
             raise BrowserIncorrectPassword(url)
 
-        self.location(url)
+        self.location(url.replace('Synthese', 'Synthcomptes'))
 
         if self.is_on_page(LoginErrorPage):
             raise BrowserIncorrectPassword()
@@ -192,9 +193,9 @@ class Cragr(Browser):
         if self.page.get_error() is not None:
             self.broken_perimeters.append(perimeter)
 
-    def get_accounts_list(self, no_move=False):
+    def get_accounts_list(self):
         l = list()
-        if self.perimeters and not no_move:
+        if self.perimeters:
             for perimeter in [p for p in self.perimeters if p not in self.broken_perimeters]:
                 if self.current_perimeter != perimeter:
                     self.go_perimeter(perimeter)
@@ -205,6 +206,18 @@ class Cragr(Browser):
             l = self.get_list()
         return l
 
+    def get_cards(self):
+        accounts = []
+        if not self.is_on_page(AccountsPage):
+            self.location(self.accounts_url.format(self.sag))
+
+        for cards_page in self.page.cards_pages():
+            self.location(cards_page)
+            assert self.is_on_page(CardsPage)
+            accounts.extend(self.page.get_list())
+
+        return accounts
+
     def get_list(self):
         accounts_list = []
         # regular accounts
@@ -213,10 +226,7 @@ class Cragr(Browser):
         accounts_list.extend(self.page.get_list())
 
         # credit cards
-        for cards_page in self.page.cards_pages():
-            self.location(cards_page)
-            assert self.is_on_page(CardsPage)
-            accounts_list.extend(self.page.get_list())
+        accounts_list.extend(self.get_cards())
 
         # loan accounts
         self.location(self.loans_url.format(self.sag))
@@ -231,12 +241,27 @@ class Cragr(Browser):
             for account in self.page.get_list():
                 if account not in accounts_list:
                     accounts_list.append(account)
+
+        # update market accounts
+        for account in accounts_list:
+            if account.type == Account.TYPE_MARKET:
+                try:
+                    new_location = self.moveto_market_website(account, home=True)
+                except self.WebsiteNotSupported:
+                    account._link = None
+                    self.update_sag()
+                else:
+                    self.location(new_location)
+                    self.page.update(accounts_list)
+                    self.quit_market_website()
+                    break
+
         return accounts_list
 
-    def get_account(self, id, no_move=False):
+    def get_account(self, id):
         assert isinstance(id, basestring)
 
-        l = self.get_accounts_list(no_move)
+        l = self.get_accounts_list()
         for a in l:
             if a.id == ('%s' % id):
                 return a
@@ -246,7 +271,7 @@ class Cragr(Browser):
     def get_history(self, account):
         if account.type in (Account.TYPE_MARKET, Account.TYPE_LIFE_INSURANCE):
             self.logger.warning('This account is not supported')
-            return
+            raise NotImplementedError()
 
         # some accounts may exist without a link to any history page
         if account._link is None:
@@ -259,7 +284,9 @@ class Cragr(Browser):
 
         # card accounts need to get an updated link
         if account.type == Account.TYPE_CARD:
-            account = self.get_account(account.id, no_move=True)
+            accounts = [acc for acc in self.get_cards() if acc.id == account.id]
+            assert len(accounts) == 1
+            account = accounts[0]
 
         date_guesser = LinearDateGuesser()
         self.location(account._link.format(self.sag))
@@ -285,7 +312,6 @@ class Cragr(Browser):
 
     def iter_investment(self, account):
         if not account._link or account.type not in (Account.TYPE_MARKET, Account.TYPE_LIFE_INSURANCE):
-            self.logger.warning('This account is not supported')
             return
 
         if account._perimeter != self.current_perimeter:
@@ -306,7 +332,7 @@ class Cragr(Browser):
         elif account.type == Account.TYPE_LIFE_INSURANCE:
             self.quit_insurance_website()
 
-    def moveto_market_website(self, account):
+    def moveto_market_website(self, account, home=False):
         response = self.openurl(account._link % self.sag).read()
         self._sag = None
         # https://www.cabourse.credit-agricole.fr/netfinca-titres/servlet/com.netfinca.frontcr.navigation.AccueilBridge?TOKEN_ID=
@@ -318,6 +344,8 @@ class Cragr(Browser):
             raise self.WebsiteNotSupported()
 
         self.openurl(url)
+        if home:
+            return 'https://www.cabourse.credit-agricole.fr/netfinca-titres/servlet/com.netfinca.frontcr.synthesis.HomeSynthesis'
         parsed = urlparse(url)
         url = '%s://%s/netfinca-titres/servlet/com.netfinca.frontcr.account.WalletVal?nump=%s:%s'
         return url % (parsed.scheme, parsed.netloc, account.id, self.code_caisse)

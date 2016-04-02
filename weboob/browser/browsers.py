@@ -24,9 +24,9 @@ import pickle
 import base64
 import zlib
 try:
-    import urllib3
-except ImportError:
     from requests.packages import urllib3
+except ImportError:
+    import urllib3
 try:
     from urllib.parse import urlparse, urljoin
 except ImportError:
@@ -807,7 +807,8 @@ class StatesMixin(object):
 
     def dump_state(self):
         state = {}
-        state['url'] = self.page.url
+        if self.page:
+            state['url'] = self.page.url
         state['cookies'] = base64.b64encode(zlib.compress(pickle.dumps(self.session.cookies, -1)))
         for attrname in self.__states__:
             state[attrname] = getattr(self, attrname)

@@ -67,7 +67,9 @@ class Transaction(FrenchTransaction):
 class SGPEPage(Page):
     def get_error(self):
         err = self.document.getroot().cssselect('div.ngo_mire_reco_message') \
-            or self.document.getroot().cssselect('#nge_zone_centre .nge_cadre_message_utilisateur')
+            or self.document.getroot().cssselect('#nge_zone_centre .nge_cadre_message_utilisateur') \
+            or self.document.xpath(u'//div[contains(text(), "Echec de connexion à l\'espace Entreprises")]') \
+            or self.document.xpath(u'//div[contains(@class, "waitAuthJetonMsg")]')
         if err:
             return err[0].text.strip()
 
@@ -119,8 +121,18 @@ class LoginPage(SGPEPage):
 
 
 class AccountsPage(SGPEPage):
-    TYPES = {u'COMPTE COURANT':       Account.TYPE_CHECKING,
-             u'COMPTE PERSONNEL':     Account.TYPE_CHECKING,
+    TYPES = {u'COMPTE COURANT':      Account.TYPE_CHECKING,
+             u'COMPTE PERSONNEL':    Account.TYPE_CHECKING,
+             u'CPTE PRO':            Account.TYPE_CHECKING,
+             u'CPTE PERSO':          Account.TYPE_CHECKING,
+             u'CODEVI':              Account.TYPE_SAVINGS,
+             u'CEL':                 Account.TYPE_SAVINGS,
+             u'Ldd':                 Account.TYPE_SAVINGS,
+             u'Livret':              Account.TYPE_SAVINGS,
+             u'PEA':                 Account.TYPE_SAVINGS,
+             u'PEL':                 Account.TYPE_SAVINGS,
+             u'Plan Epargne':        Account.TYPE_SAVINGS,
+             u'Prêt':                Account.TYPE_LOAN,
             }
 
     def get_list(self):
@@ -133,7 +145,9 @@ class AccountsPage(SGPEPage):
             if all((tdname, tdid, tdbalance)):
                 account = Account()
                 account.label = to_unicode(tdname)
-                account.type = self.TYPES.get(account.label, Account.TYPE_UNKNOWN)
+                for wording, acc_type in self.TYPES.iteritems():
+                    if wording in account.label:
+                        account.type = acc_type
                 account.id = to_unicode(tdid.replace(u'\xa0', '').replace(' ', ''))
                 account._agency = to_unicode(tdagency)
                 account._is_card = False

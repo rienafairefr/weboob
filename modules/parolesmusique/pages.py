@@ -38,7 +38,7 @@ class HomePage(Page):
 
 class ArtistResultsPage(Page):
     def iter_lyrics(self):
-        for link in self.parser.select(self.document.getroot(), 'div.cont_cat table a.std'):
+        for link in self.parser.select(self.document.getroot(), 'a.matchA'):
             artist = unicode(link.text_content())
             self.browser.location('http://www.paroles-musique.com%s' % link.attrib.get('href', ''))
             assert self.browser.is_on_page(ArtistSongsPage)
@@ -48,13 +48,14 @@ class ArtistResultsPage(Page):
 
 class ArtistSongsPage(Page):
     def iter_lyrics(self, artist):
-        for link in self.parser.select(self.document.getroot(), 'div.cont_catA div.art_scroll a'):
+        for link in self.parser.select(self.document.getroot(), 'td.art_titr a'):
             href = link.attrib.get('href', '')
             if href.startswith('./paroles'):
                 title = unicode(link.text)
                 id = href.replace('./paroles-', '')
-                songlyrics = SongLyrics(id, title)
+                songlyrics = SongLyrics(id)
                 songlyrics.artist = artist
+                songlyrics.title = title
                 songlyrics.content = NotLoaded
                 yield songlyrics
 
@@ -67,12 +68,14 @@ class SongResultsPage(Page):
                 first = False
                 continue
             artist = NotAvailable
-            links = self.parser.select(tr, 'a.std')
+            links = self.parser.select(tr, 'a.matchT')
             title = unicode(links[0].text)
             id = links[0].attrib.get('href', '').replace('/paroles-', '')
-            artist = unicode(links[1].text)
-            songlyrics = SongLyrics(id, title)
+            links = self.parser.select(tr, 'a.matchA')
+            artist = unicode(links[0].text)
+            songlyrics = SongLyrics(id)
             songlyrics.artist = artist
+            songlyrics.title = title
             songlyrics.content = NotLoaded
             yield songlyrics
 
@@ -82,10 +85,11 @@ class SonglyricsPage(Page):
         artist = NotAvailable
         title = NotAvailable
         content = unicode(self.parser.select(self.document.getroot(), 'div#lyr_scroll', 1).text_content().strip())
-        infos = self.parser.select(self.document.getroot(), 'h2.lyrics > font')
-        artist = unicode(infos[0].text)
-        title = unicode(infos[1].text)
-        songlyrics = SongLyrics(id, title)
+        infos = self.parser.select(self.document.getroot(), 'table.tbl_cont tr.cont_a td')[1]
+        artist = unicode(infos[0].tail.strip())
+        title = unicode(infos[1].tail.strip())
+        songlyrics = SongLyrics(id)
         songlyrics.artist = artist
+        songlyrics.title = title
         songlyrics.content = content
         return songlyrics

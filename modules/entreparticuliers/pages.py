@@ -19,13 +19,12 @@
 
 from decimal import Decimal
 from datetime import datetime
-import re
 
-from weboob.browser.pages import JsonPage, HTMLPage
+from weboob.browser.pages import JsonPage, XMLPage
 from weboob.browser.elements import ItemElement, ListElement, DictElement, method
 from weboob.browser.filters.json import Dict
+from weboob.browser.filters.standard import CleanText, CleanDecimal, Format, Regexp
 from weboob.browser.filters.html import CleanHTML
-from weboob.browser.filters.standard import CleanText, CleanDecimal, Regexp, Env, BrowserURL
 from weboob.capabilities.housing import Housing, HousingPhoto, City
 
 
@@ -43,73 +42,83 @@ class CitiesPage(JsonPage):
             obj_name = Dict('libelle')
 
 
-class SearchPage(HTMLPage):
+class EntreParticuliersXMLPage(XMLPage):
+    ENCODING = 'utf-8'
+
+    def build_doc(self, content):
+        from weboob.tools.json import json
+        json_content = json.loads(content)
+        return super(EntreParticuliersXMLPage, self).build_doc(json_content.get('d').encode(self.ENCODING))
+
+
+class SearchPage(EntreParticuliersXMLPage):
     @method
     class iter_housings(ListElement):
-        item_xpath = '//li[@class="annonce"]'
+        item_xpath = '//AnnoncePresentation'
 
         class item(ItemElement):
             klass = Housing
 
-            def condition(self):
-                return CleanText('./div/span[@class="infos"]/a[@class="titre"]/@href')(self)
-
-            obj_id = Regexp(CleanText('./div/span[@class="infos"]/a[@class="titre"]/@href'),
-                            '/(.*).html')
-            obj_title = CleanText('./div/span[@class="infos"]/a[@class="titre"]')
-            obj_cost = CleanDecimal(Regexp(CleanText('./div/span[@class="infos"]/span[@id="spanprix"]/text()'),
-                                           '(.*) [%s%s%s].*' % (u'€', u'$', u'£'),
-                                           default=''),
-                                    replace_dots=(',', '.'),
-                                    default=Decimal(0))
-            obj_currency = Regexp(CleanText('./div/span[@class="infos"]/span[@id="spanprix"]'),
-                                  '.*([%s%s%s]).*' % (u'€', u'$', u'£'), default=u'€')
-            obj_text = CleanText('./div/span[@class="infos"]/span[@id="spandescription"]/text()')
+            obj_id = Format('%s#%s#%s',
+                            CleanText('./Idannonce'),
+                            CleanText('./Rubrique'),
+                            CleanText('./Source'))
+            obj_title = CleanText('./Titre')
+            obj_cost = CleanDecimal('./Prix', default=Decimal(0))
+            obj_currency = u'€'
+            obj_text = Format('%s / %s', CleanText('Localisation'),
+                              CleanText('./MiniINfos'))
             obj_date = datetime.now
+            obj_url = CleanText('./LienDetail')
 
 
-class HousingPage(HTMLPage):
+class HousingPage(EntreParticuliersXMLPage):
     @method
     class get_housing(ItemElement):
         klass = Housing
 
-        obj_id = Env('_id')
-        obj_title = CleanText('//main/section/div/h1')
+        obj_title = CleanText('//Titre')
 
         def obj_cost(self):
-            for detail in self.el.xpath('//span[@class="i small"]|//span[@class="i prix"]'):
-                m = re.search('(.*) [%s%s%s].*' % (u'€', u'$', u'£'),
-                              CleanText('.')(detail))
-                if m:
-                    return Decimal(m.group(1).replace(' ', ''))
+            cost = CleanDecimal(Regexp(CleanText('//Prix'),
+                                       u'(.*)\&euro;.*',
+                                       default=None),
+                                default=None)(self)
+            return cost if cost else CleanDecimal(Regexp(CleanText('//Prix'),
+                                                         u'(.*)€'))(self)
+        obj_currency = u'€'
 
-        obj_currency = Regexp(CleanText('//span[@class="i small"]'),
-                              '.*([%s%s%s])' % (u'€', u'$', u'£'), default=u'€')
-        obj_text = CleanHTML('//article[@class="bloc description"]/p')
-        obj_location = CleanText('//span[@class="i ville"]')
+        obj_text = CleanText('//Description')
+        obj_location = CleanHTML(CleanText('//Localisation'))
 
-        def obj_area(self):
-            for detail in self.el.xpath('//span[@class="i"]'):
-                m = re.search('.*\/(.*) m.*',
-                              CleanText('.')(detail))
-                if m:
-                    return Decimal(m.group(1).replace(' ', ''))
-
-        obj_url = BrowserURL('housing', _id=Env('_id'))
-        obj_phone = CleanText('//input[@id="hftel"]/@value')
+        obj_area = CleanDecimal('//SurfaceBien', replace_dots=True)
+        obj_phone = CleanText('//Telephone')
         obj_date = datetime.now
 
         def obj_details(self):
             details = {}
-            for detail in self.el.xpath('//span[has-class("i")]'):
-                item = detail.text.split(':')
-                if len(item) == 2:
-                    details[item[0]] = item[1]
+            details[u'Type de bien'] = CleanText('//Tbien')(self)
+            details[u'Reference'] = CleanText('(//Reference)[1]')(self)
+            details[u'Nb pièces'] = CleanText('//Nbpieces')(self)
+
+            _ener = CleanText('//Energie')(self)
+            if _ener:
+                details[u'Energie'] = _ener
+
+            _lat = CleanText('//Latitude')(self)
+            if _lat:
+                details[u'Latitude'] = _lat
+
+            _long = CleanText('//Longitude')(self)
+            if _long:
+                details[u'Longitude'] = _long
+
             return details
 
         def obj_photos(self):
             photos = []
-            for img in self.el.xpath('//ul[@id="ulPhotos"]/li/img/@src'):
-                url = u'http://www.entreparticuliers.com/%s' % img
+            for i in range(1, CleanDecimal('//NbPhotos')(self) + 1):
+                img = CleanText('//LienImage%s' % i, replace=[(u'w=69&h=52', u'w=786&h=481')])(self)
+                url = img if img.startswith('http') else u'http://www.entreparticuliers.com%s' % img
                 photos.append(HousingPhoto(url))
             return photos

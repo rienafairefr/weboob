@@ -72,6 +72,7 @@ def install_weboob():
                       'qflatboob',
                       'qcineoob',
                       'qcookboob',
+                      'qbooblyrics',
                       'qhandjoob'))
 
     if not options.hildon:
@@ -91,6 +92,8 @@ def install_weboob():
         'weboob.applications.qcineoob.ui',
         'weboob.applications.qcookboob',
         'weboob.applications.qcookboob.ui',
+        'weboob.applications.qbooblyrics',
+        'weboob.applications.qbooblyrics.ui',
         'weboob.applications.qhandjoob',
         'weboob.applications.qhandjoob.ui',
         'weboob.applications.qhavedate',
@@ -127,6 +130,7 @@ def install_weboob():
         'python-dateutil',
         'PyYAML',
         'prettytable',
+        'google-api-python-client',
     ]
     try:
         import Image
@@ -140,7 +144,6 @@ def install_weboob():
             requirements.append('PIL')
 
     if sys.version_info < (3, 0):
-        requirements.append('gdata')
         requirements.append('mechanize')
 
     if sys.version_info < (3, 2):

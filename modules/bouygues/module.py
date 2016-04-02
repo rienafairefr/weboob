@@ -18,7 +18,7 @@
 # along with weboob. If not, see <http://www.gnu.org/licenses/>.
 
 
-from weboob.capabilities.bill import CapBill, Subscription, Bill, SubscriptionNotFound, BillNotFound
+from weboob.capabilities.bill import CapDocument, Subscription, Document, SubscriptionNotFound, DocumentNotFound
 from weboob.capabilities.messages import CantSendMessage, CapMessages, CapMessagesPost
 from weboob.capabilities.base import find_object
 from weboob.tools.backend import Module, BackendConfig
@@ -30,7 +30,7 @@ from .browser import BouyguesBrowser
 __all__ = ['BouyguesModule']
 
 
-class BouyguesModule(Module, CapMessages, CapMessagesPost, CapBill):
+class BouyguesModule(Module, CapMessages, CapMessagesPost, CapDocument):
     NAME = 'bouygues'
     MAINTAINER = u'Bezleputh'
     EMAIL = 'carton_ben@yahoo.fr'
@@ -55,18 +55,17 @@ class BouyguesModule(Module, CapMessages, CapMessagesPost, CapBill):
     def get_subscription(self, _id):
         return find_object(self.iter_subscription(), id=_id, error=SubscriptionNotFound)
 
-    def get_bill(self, _id):
-        subid, billid = _id.split('.')
+    def get_document(self, _id):
+        subid = _id.rsplit('_', 1)[0]
         subscription = self.get_subscription(subid)
+        return find_object(self.iter_documents(subscription), id=_id, error=DocumentNotFound)
 
-        return find_object(self.iter_bills(subscription), id=billid, error=BillNotFound)
-
-    def iter_bills(self, subscription):
+    def iter_documents(self, subscription):
         if not isinstance(subscription, Subscription):
             subscription = self.get_subscription(subscription)
-        return self.browser.iter_bills(subscription)
+        return self.browser.iter_documents(subscription)
 
-    def download_bill(self, bill):
-        if not isinstance(bill, Bill):
-            bill = self.get_bill(bill)
-        return self.browser.open(bill._url).content
+    def download_document(self, document):
+        if not isinstance(document, Document):
+            document = self.get_document(document)
+        return self.browser.open(document._url).content

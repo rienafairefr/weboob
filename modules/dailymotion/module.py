@@ -24,6 +24,7 @@ from weboob.tools.value import Value
 from weboob.tools.ordereddict import OrderedDict
 from .browser import DailymotionBrowser
 
+import re
 
 __all__ = ['DailymotionModule']
 
@@ -58,7 +59,12 @@ class DailymotionModule(Module, CapVideo, CapCollection):
         return self.create_browser(resolution=resolution, format=format)
 
     def get_video(self, _id):
-        return self.browser.get_video(_id)
+        m = re.match('http://[w\.]*dailymotion\.com/video/(.*)', _id)
+        if m:
+            _id = m.group(1)
+
+        if not _id.startswith('http'):
+            return self.browser.get_video(_id)
 
     def search_videos(self, pattern, sortby=CapVideo.SEARCH_RELEVANCE, nsfw=False):
         return self.browser.search_videos(pattern, self.SORTBY[sortby])
@@ -68,7 +74,7 @@ class DailymotionModule(Module, CapVideo, CapCollection):
             # if we don't want only the thumbnail, we probably want also every fields
             video = self.browser.get_video(video.id, video)
         if 'thumbnail' in fields and video.thumbnail:
-            video.thumbnail.data = self.browser.open(video.thumbnail.url)
+            video.thumbnail.data = self.browser.open(video.thumbnail.url).content
         return video
 
     def iter_resources(self, objs, split_path):

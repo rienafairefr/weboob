@@ -152,7 +152,7 @@ class StandardBrowser(mechanize.Browser):
 
     ENCODING = 'utf-8'
     USER_AGENTS = {
-        'desktop_firefox': 'Mozilla/5.0 (X11; Linux x86_64; rv:38.0) Gecko/20100101 Firefox/38.0',
+        'desktop_firefox': 'Mozilla/5.0 (X11; Linux x86_64; rv:45.0) Gecko/20100101 Firefox/45.0',
         'android': 'Mozilla/5.0 (Linux; U; Android 2.1; en-us; Nexus One Build/ERD62) AppleWebKit/530.17 (KHTML, like Gecko) Version/4.0 Mobile Safari/530.17',
         'microb': 'Mozilla/5.0 (X11; U; Linux armv7l; fr-FR; rv:1.9.2.3pre) Gecko/20100723 Firefox/3.5 Maemo Browser 1.7.4.8 RX-51 N900',
         'wget': 'Wget/1.11.4',
@@ -754,6 +754,11 @@ ssl.wrap_socketold = ssl.wrap_socket
 ssl.wrap_socket = mywrap_socket
 
 
+# XXX MONKEY PATCHING TO DISABLE SSL CERTIFICATE VERIFICATION
+if hasattr(ssl, '_create_unverified_context'):
+    ssl._create_default_https_context = ssl._create_unverified_context
+
+
 class DNSTimeoutException(Exception):
     pass
 
@@ -780,7 +785,7 @@ socket.getaddrinfo = my_getaddrinfo
 
 class HTTPSConnection2(httplib.HTTPSConnection):
     _HOSTS = {}
-    _PROTOCOLS = [ssl.PROTOCOL_TLSv1, ssl.PROTOCOL_SSLv23]
+    _PROTOCOLS = [getattr(ssl, pn) for pn in ['PROTOCOL_TLSv1_2', 'PROTOCOL_TLSv1_1', 'PROTOCOL_TLSv1', 'PROTOCOL_SSLv23'] if hasattr(ssl, pn)]
 
     def _my_create_connection(self):
         sock = socket.create_connection((self.host, self.port), self.timeout)

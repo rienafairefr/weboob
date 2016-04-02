@@ -18,6 +18,7 @@
 # along with weboob. If not, see <http://www.gnu.org/licenses/>.
 
 from decimal import Decimal
+from urlparse import urlparse
 import re
 
 from weboob.capabilities import NotAvailable
@@ -28,6 +29,17 @@ from weboob.tools.date import parse_french_date
 
 
 class BasePage(Page):
+    def on_loaded(self):
+        self.get_current()
+
+    def get_current(self):
+        try:
+            current_elem = self.document.xpath('//div[@id="libPerimetre"]/span[@class="texte"]')[0]
+        except IndexError:
+            self.logger.debug('Can\'t update current perimeter on this page.')
+            return
+        self.browser.current_perimeter = re.search(': (.*)$', self.parser.tocleanstring(current_elem)).group(1).lower()
+
     def get_error(self):
         try:
             error = self.document.xpath('//h1[@class="h1-erreur"]')[0]
@@ -159,7 +171,7 @@ class _AccountsPage(BasePage):
             account = Account()
             account.id = self.parser.tocleanstring(cols[self.COL_ID])
             account.label = self.parser.tocleanstring(cols[self.COL_LABEL])
-            account.type = account_type or self.TYPES.get(account.label, Account.TYPE_UNKNOWN)
+            account.type = self.TYPES.get(account.label, Account.TYPE_UNKNOWN) or account_type
             balance = self.parser.tocleanstring(cols[self.COL_VALUE])
             # we have to ignore those accounts, because using NotAvailable
             # makes boobank and probably many others crash
@@ -194,14 +206,6 @@ class _AccountsPage(BasePage):
         return len(self.document.xpath('//a[@title="Espace Autres Comptes"]'))
 
 class PerimeterPage(BasePage):
-    def get_current(self):
-        try:
-            current_elem = self.document.xpath('//div[@id="libPerimetre"]/span[@class="texte"]')[0]
-        except IndexError:
-            # The user need to validate CGU, can't do it for him.
-            return
-        self.browser.current_perimeter = re.search(': (.*)$', self.parser.tocleanstring(current_elem)).group(1).lower()
-
     def check_multiple_perimeters(self):
         self.browser.perimeters = list()
         self.get_current()
@@ -210,9 +214,13 @@ class PerimeterPage(BasePage):
         self.browser.perimeters.append(self.browser.current_perimeter)
         multiple = self.document.xpath(u'//p[span/a[contains(text(), "Accès")]]')
         if not multiple:
-            assert self.document.xpath(u'//div[contains(text(), "Périmètre en cours de chargement. Merci de patienter quelques secondes.")]')
+            if not len(self.document.xpath(u'//div[contains(text(), "Périmètre en cours de chargement. Merci de patienter quelques secondes.")]')):
+                self.logger.debug('Possible error on this page.')
             # We change perimeter in this case to add the second one.
-            self.browser.location(self.browser.chg_perimeter_url.format(self.browser.sag))
+            self.browser.location(self.browser.chg_perimeter_url.format(self.browser.sag), no_login=True)
+            if self.browser.page.get_error() is not None:
+                self.browser.broken_perimeters.append('the other perimeter is broken')
+                self.browser.login()
         for p in multiple:
             self.browser.perimeters.append(' '.join(p.find('label').text.lower().split()))
 
@@ -226,6 +234,7 @@ class PerimeterPage(BasePage):
 class ChgPerimeterPage(PerimeterPage):
     def on_loaded(self):
         if self.get_error() is not None:
+            self.logger.debug('Error on ChgPerimeterPage')
             return
         self.get_current()
         if not self.browser.current_perimeter.lower() in [' '.join(p.lower().split()) for p in self.browser.perimeters]:
@@ -372,18 +381,20 @@ class SavingsPage(_AccountsPage):
     COL_ID = 1
 
     def set_link(self, account, cols):
+        origin = urlparse(self.url)
         if not account._link:
             a = cols[0].xpath('descendant::a[contains(@href, "CATITRES")]')
-            if a:
+            # Sometimes there is no link.
+            if a or account.type == Account.TYPE_MARKET:
                 url = 'https://%s/stb/entreeBam?sessionSAG=%%s&stbpg=pagePU&site=CATITRES&typeaction=reroutage_aller'
-                account._link = url % self.browser.request.host
+                account._link = url % origin.netloc
 
             a = cols[0].xpath("descendant::a[contains(@href, \"'PREDICA','CONTRAT'\")]")
             if a:
                 account.type = Account.TYPE_LIFE_INSURANCE
                 url = 'https://%s/stb/entreeBam?sessionSAG=%%s&stbpg=pagePU&site=PREDICA&' \
                       'typeaction=reroutage_aller&sdt=CONTRAT&parampartenaire=%s'
-                account._link = url % (self.browser.request.host, account.id)
+                account._link = url % (origin.netloc, account.id)
 
 
 class TransactionsPage(BasePage):
@@ -550,6 +561,20 @@ class MarketPage(BasePage):
         if v == '-' or v == '':
             return NotAvailable
         return Decimal(Transaction.clean_amount(value))
+
+
+class MarketHomePage(MarketPage):
+    COL_ID_LABEL = 1
+    COL_VALUATION = 5
+    def update(self, accounts):
+        for line in self.document.xpath('//table[contains(@class, "tableau_comptes_details")]/tbody/tr'):
+            cells = line.findall('td')
+
+            id  = cells[self.COL_ID_LABEL].find('div[2]').text.strip()
+            for account in accounts:
+                if account.id == id:
+                    account.label = unicode(cells[self.COL_ID_LABEL].find('div/b').text.strip())
+                    account.balance = self.parse_decimal(cells[self.COL_VALUATION].text)
 
 
 class LifeInsurancePage(MarketPage):

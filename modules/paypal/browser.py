@@ -26,7 +26,8 @@ from weboob.exceptions import BrowserHTTPError, BrowserIncorrectPassword
 from weboob.browser.browsers import LoginBrowser, need_login
 from weboob.browser.url import URL
 
-from .pages import PromoPage, LoginPage, AccountPage, UselessPage, HomePage, ProHistoryPage, PartHistoryPage, HistoryDetailsPage, HistoryPaybackPage, ErrorPage
+from .pages import PromoPage, LoginPage, AccountPage, UselessPage, HomePage, ProHistoryPage, \
+                   PartHistoryPage, HistoryDetailsPage, HistoryPaybackPage, ErrorPage, OldWebsitePage
 
 
 __all__ = ['Paypal']
@@ -59,11 +60,16 @@ class Paypal(LoginBrowser):
                       'https://\w+.paypal.com/businessexp/summary',
                       ProHistoryPage)
     part_history = URL('https://\w+.paypal.com/myaccount/activity/.*', PartHistoryPage)
+    old_website = URL('https://paypalmanager.paypal.com/login.do', OldWebsitePage)
 
     TIMEOUT = 180.0
 
-    BEGINNING = datetime.date.today() - relativedelta(months=24)
-    account_type = None
+
+    def __init__(self, *args, **kwargs):
+        self.BEGINNING = datetime.date.today() - relativedelta(months=24)
+        self.account_type = None
+        self.account_currencies = list()
+        super(Paypal, self).__init__(*args, **kwargs)
 
     def find_account_type(self):
         try:
@@ -80,10 +86,11 @@ class Paypal(LoginBrowser):
             self.location('/signin/')
 
         response = self.open(self.page.get_script_url())
-        token, csrf = self.page.get_token_and_csrf(response.text)
+        token, csrf, key, value = self.page.get_token_and_csrf(response.text)
         data = {}
         data['ads_token_js'] = token
         data['_csrf'] = csrf
+        data[key] = value
         data = urllib.urlencode(data)
         self.open('/auth/verifychallenge', data=data)
         res = self.page.login(self.username, self.password)
@@ -95,6 +102,9 @@ class Paypal(LoginBrowser):
 
     @need_login
     def get_accounts(self):
+        if self.account_type is None:
+            self.find_account_type()
+
         self.account.stay_or_go()
 
         return self.page.get_accounts()

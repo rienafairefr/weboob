@@ -26,7 +26,7 @@ from weboob.capabilities.bank import Account, TransferError, AccountNotFound
 from weboob.capabilities.base import find_object
 
 from .pages import AccountsList, LoginPage, NetissimaPage, TitrePage, TitreHistory,\
-    TransferPage, TransferConfirmPage, BillsPage, StopPage, TitreDetails, TitreValuePage
+    TransferPage, TransferConfirmPage, BillsPage, StopPage, TitreDetails, TitreValuePage, ASVHistory
 
 
 __all__ = ['IngBrowser']
@@ -62,7 +62,8 @@ class IngBrowser(LoginBrowser):
     titrehistory = URL('https://bourse.ingdirect.fr/priv/compte.php\?ong=3', TitreHistory)
     titrerealtime = URL('https://bourse.ingdirect.fr/streaming/compteTempsReelCK.php', TitrePage)
     titrevalue = URL('https://bourse.ingdirect.fr/priv/fiche-valeur.php\?val=(?P<val>.*)&pl=(?P<pl>.*)&popup=1', TitreValuePage)
-    # CapBill
+    asv_history = URL('https://ingdirectvie.ingdirect.fr/b2b2c/epargne/CoeLisMvt', ASVHistory)
+    # CapDocument
     billpage = URL('/protected/pages/common/estatement/eStatement.jsf', BillsPage)
 
     __states__ = ['where']
@@ -128,7 +129,7 @@ class IngBrowser(LoginBrowser):
     @need_login
     @check_bourse
     def get_history(self, account):
-        if account.type == Account.TYPE_MARKET:
+        if account.type == Account.TYPE_MARKET or account.type == Account.TYPE_LIFE_INSURANCE:
             for result in self.get_history_titre(account):
                 yield result
             return
@@ -225,6 +226,17 @@ class IngBrowser(LoginBrowser):
             raise TransferError('Recipient not found')
 
 
+    def go_on_asv_history(self, account):
+        account = self.get_account(account.id)
+        data = {"index": "index",
+                "autoScroll": "",
+                "javax.faces.ViewState": account._jid,
+                "index:j_idcl": "index:asvInclude:goToAsvPartner",
+               }
+        self.accountspage.go(data=data)
+        self.page.submit()
+        self.location('/b2b2c/epargne/CoeLisMvt')
+
     def go_investments(self, account):
         account = self.get_account(account.id)
         data = {"AJAX:EVENTS_COUNT": 1,
@@ -258,6 +270,7 @@ class IngBrowser(LoginBrowser):
         else:
             self.logger.warning("Unable to get investments list...")
 
+
         if self.page.is_asv:
             return
 
@@ -281,19 +294,25 @@ class IngBrowser(LoginBrowser):
 
         if self.where == u'titre':
             self.titrehistory.go()
-            return self.page.iter_history()
+        elif self.page.asv_has_transactions:
+            self.go_on_asv_history(account)
         else:
-            # No history for ASV accounts.
-            raise NotImplementedError()
+            return iter([])
+        transactions = list()
+        for tr in self.page.iter_history():
+            transactions.append(tr)
+        if self.asv_history.is_here():
+            self.location('https://secure.ingdirect.fr/')
+        return iter(transactions)
 
-    ############# CapBill #############
+    ############# CapDocument #############
     @need_login
     @check_bourse
     def get_subscriptions(self):
         return self.billpage.go().iter_account()
 
     @need_login
-    def get_bills(self, subscription):
+    def get_documents(self, subscription):
         self.billpage.go()
         data = {"AJAXREQUEST": "_viewRoot",
                 "accountsel_form": "accountsel_form",
@@ -303,7 +322,7 @@ class IngBrowser(LoginBrowser):
                 "transfer_issuer_radio": subscription.id
                 }
         self.billpage.go(data=data)
-        return self.page.iter_bills(subid=subscription.id)
+        return self.page.iter_documents(subid=subscription.id)
 
     def predownload(self, bill):
         self.page.postpredown(bill._localid)
