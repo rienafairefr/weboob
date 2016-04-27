@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright(C) 2013 Julien Veyssier
+# Copyright(C) 2016 Julien Veyssier
 #
 # This file is part of weboob.
 #
@@ -23,46 +23,47 @@ from weboob.browser import PagesBrowser
 from weboob.browser.url import URL
 from weboob.browser.profiles import Firefox
 
-from .pages import SearchSongPage, LyricsPage, SearchArtistPage, ArtistSongsPage
+from .pages import SearchPage, LyricsPage, HomePage, ArtistPage
 
 import itertools
 
 
-__all__ = ['ParolesmaniaBrowser']
+__all__ = ['LyricsplanetBrowser']
 
 
-class ParolesmaniaBrowser(PagesBrowser):
+class LyricsplanetBrowser(PagesBrowser):
     PROFILE = Firefox()
     TIMEOUT = 30
 
-    BASEURL = 'http://www.parolesmania.com/'
-    searchSong = URL('recherche.php\?c=title&k=(?P<pattern>[^/]*).*',
-                 SearchSongPage)
-    searchArtist = URL('recherche.php\?c=artist&k=(?P<pattern>[^/]*).*',
-                  SearchArtistPage)
-    songLyrics = URL('paroles_(?P<artistid>[^/]*)/paroles_(?P<songid>[^/]*)\.html',
+    BASEURL = 'http://www.lyricsplanet.com/'
+    home = URL('$',
+                 HomePage)
+    search = URL('search\.php$',
+                 SearchPage)
+    artist = URL('search\.php\?field=artisttitle&value=(?P<artistid>[^/]*)$',
+                  ArtistPage)
+    lyrics = URL('lyrics\.php\?id=(?P<songid>[^/]*)$',
                   LyricsPage)
-    artistSongs = URL('paroles_(?P<artistid>[^/]*)\.html',
-                  ArtistSongsPage)
-
 
     def iter_lyrics(self, criteria, pattern):
-        if criteria == 'artist':
-            artist_ids = self.searchArtist.go(pattern=pattern).get_artist_ids()
+        self.home.stay_or_go()
+        assert self.home.is_here()
+        self.page.search_lyrics(criteria, pattern)
+        assert self.search.is_here()
+        if criteria == 'song':
+            return self.page.iter_song_lyrics()
+        elif criteria == 'artist':
+            artist_ids = self.page.get_artist_ids()
             it = []
             # we just take the 3 first artists to avoid too many page loadings
             for aid in artist_ids[:3]:
-                it = itertools.chain(it, self.artistSongs.go(artistid=aid).iter_lyrics())
+                it = itertools.chain(it, self.artist.go(artistid=aid).iter_lyrics())
             return it
-        elif criteria == 'song':
-            return self.searchSong.go(pattern=pattern).iter_lyrics()
 
     def get_lyrics(self, id):
-        ids = id.split('|')
         try:
-            self.songLyrics.go(artistid=ids[0], songid=ids[1])
+            self.lyrics.go(songid=id)
             songlyrics = self.page.get_lyrics()
             return songlyrics
         except BrowserHTTPNotFound:
             return
-

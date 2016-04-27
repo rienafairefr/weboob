@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright(C) 2013 Julien Veyssier
+# Copyright(C) 2016 Julien Veyssier
 #
 # This file is part of weboob.
 #
@@ -20,27 +20,25 @@
 from weboob.capabilities.lyrics import CapLyrics, SongLyrics
 from weboob.tools.backend import Module
 
-from .browser import SeeklyricsBrowser
+from .browser import LyricsplanetBrowser
 
-from urllib import quote_plus
-
-__all__ = ['SeeklyricsModule']
+__all__ = ['LyricsplanetModule']
 
 
-class SeeklyricsModule(Module, CapLyrics):
-    NAME = 'seeklyrics'
+class LyricsplanetModule(Module, CapLyrics):
+    NAME = 'lyricsplanet'
     MAINTAINER = u'Julien Veyssier'
-    EMAIL = 'julien.veyssier@aiur.fr'
+    EMAIL = 'eneiluj@gmx.fr'
     VERSION = '1.2'
-    DESCRIPTION = 'SeekLyrics lyrics website'
+    DESCRIPTION = 'Lyricsplanet.com song lyrics website'
     LICENSE = 'AGPLv3+'
-    BROWSER = SeeklyricsBrowser
+    BROWSER = LyricsplanetBrowser
 
     def get_lyrics(self, id):
         return self.browser.get_lyrics(id)
 
     def iter_lyrics(self, criteria, pattern):
-        return self.browser.iter_lyrics(criteria, quote_plus(pattern.encode('iso-8859-1')))
+        return self.browser.iter_lyrics(criteria, pattern.encode('utf-8'))
 
     def fill_songlyrics(self, songlyrics, fields):
         if 'content' in fields:

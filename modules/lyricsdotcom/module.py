@@ -20,25 +20,27 @@
 from weboob.capabilities.lyrics import CapLyrics, SongLyrics
 from weboob.tools.backend import Module
 
-from .browser import ParolesmusiqueBrowser
+from .browser import LyricsdotcomBrowser
 
-__all__ = ['ParolesmusiqueModule']
+from urllib import quote_plus
+
+__all__ = ['LyricsdotcomModule']
 
 
-class ParolesmusiqueModule(Module, CapLyrics):
-    NAME = 'parolesmusique'
+class LyricsdotcomModule(Module, CapLyrics):
+    NAME = 'lyricsdotcom'
     MAINTAINER = u'Julien Veyssier'
     EMAIL = 'eneiluj@gmx.fr'
     VERSION = '1.2'
-    DESCRIPTION = 'paroles-musique lyrics website'
+    DESCRIPTION = 'Lyrics.com lyrics website'
     LICENSE = 'AGPLv3+'
-    BROWSER = ParolesmusiqueBrowser
+    BROWSER = LyricsdotcomBrowser
 
     def get_lyrics(self, id):
         return self.browser.get_lyrics(id)
 
     def iter_lyrics(self, criteria, pattern):
-        return self.browser.iter_lyrics(criteria, pattern.encode('utf-8'))
+        return self.browser.iter_lyrics(criteria, quote_plus(pattern.encode('utf-8')))
 
     def fill_songlyrics(self, songlyrics, fields):
         if 'content' in fields:

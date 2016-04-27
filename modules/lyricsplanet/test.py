@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright(C) 2013 Julien Veyssier
+# Copyright(C) 2016 Julien Veyssier
 #
 # This file is part of weboob.
 #
@@ -20,12 +20,11 @@
 from weboob.tools.test import BackendTest
 from weboob.capabilities.base import NotLoaded
 
-
-class SeeklyricsTest(BackendTest):
-    MODULE = 'seeklyrics'
+class LyricsplanetTest(BackendTest):
+    MODULE = 'lyricsplanet'
 
     def test_search_song_n_get(self):
-        l_lyrics = list(self.backend.iter_lyrics('song', 'Complainte'))
+        l_lyrics = list(self.backend.iter_lyrics('song', 'chien'))
         for songlyrics in l_lyrics:
             assert songlyrics.id
             assert songlyrics.title
@@ -38,7 +37,7 @@ class SeeklyricsTest(BackendTest):
             assert full_lyr.content is not NotLoaded
 
     def test_search_artist(self):
-        l_lyrics = list(self.backend.iter_lyrics('artist', 'boris vian'))
+        l_lyrics = list(self.backend.iter_lyrics('artist', 'boris'))
         for songlyrics in l_lyrics:
             assert songlyrics.id
             assert songlyrics.title

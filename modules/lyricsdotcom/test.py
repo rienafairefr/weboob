@@ -21,8 +21,8 @@ from weboob.tools.test import BackendTest
 from weboob.capabilities.base import NotLoaded
 
 
-class ParolesmusiqueTest(BackendTest):
-    MODULE = 'parolesmusique'
+class LyricsdotcomTest(BackendTest):
+    MODULE = 'lyricsdotcom'
 
     def test_search_song_n_get(self):
         l_lyrics = list(self.backend.iter_lyrics('song', 'chien'))

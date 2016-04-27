@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright(C) 2013 Julien Veyssier
+# Copyright(C) 2016 Julien Veyssier
 #
 # This file is part of weboob.
 #
@@ -18,6 +18,6 @@
 # along with weboob. If not, see <http://www.gnu.org/licenses/>.
 
 
-from .module import SeeklyricsModule
+from .module import LyricsdotcomModule
 
-__all__ = ['SeeklyricsModule']
+__all__ = ['LyricsdotcomModule']

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright(C) 2015 Julien Veyssier
+# Copyright(C) 2016 Julien Veyssier
 #
 # This file is part of weboob.
 #
@@ -18,11 +18,6 @@
 # along with weboob. If not, see <http://www.gnu.org/licenses/>.
 
 
-from weboob.tools.test import BackendTest
+from .module import LyricsmodeModule
 
-
-class FreegeoipTest(BackendTest):
-    MODULE = 'freegeoip'
-
-    def test_freegeoip(self):
-        self.backend.get_location('88.198.11.130')
+__all__ = ['LyricsmodeModule']
